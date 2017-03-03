@@ -94,7 +94,7 @@ public class TestLease {
       FSDataOutputStream d_out = createFsOut(dfs, dirString + "d");
 
       // stub the renew method.
-      doThrow(new RemoteException(InvalidToken.class.getName(),
+      doThrow(new RemoteException(IOException.class.getName(),
           "Your token is worthless")).when(spyNN).renewLease(anyString());
 
       // We don't need to wait the lease renewer thread to act.
@@ -121,18 +121,18 @@ public class TestLease {
       - HdfsConstants.LEASE_HARDLIMIT_PERIOD - 1000;
       dfs.renewLease();
 
-      // this should not work.
-      try {
-        d_out.write(buf, 0, 1024);
-        d_out.close();
-        Assert.fail("Write did not fail even after the fatal lease renewal failure");
-      } catch (IOException e) {
-        LOG.info("Write failed as expected. ", e);
-      }
+      verifyRenewerEmpty(originalRenewer, d_out, buf);
 
-      // If aborted, the renewer should be empty. (no reference to clients)
-      Thread.sleep(1000);
-      Assert.assertTrue(originalRenewer.isEmpty());
+      // stub the renew method for token expired exception
+      doThrow(new RemoteException(InvalidToken.class.getName(),
+              "token (HDFS_DELEGATION_TOKEN token 111018676 for hdfs) is expired")).when(spyNN).renewLease(anyString());
+
+      FSDataOutputStream d_out2 = createFsOut(dfs, dirString + "d2");
+
+      try {
+        dfs.renewLease();
+      } catch (IOException e) {}
+      verifyRenewerEmpty(originalRenewer, d_out2, buf);
 
       // unstub
       doNothing().when(spyNN).renewLease(anyString());
@@ -371,6 +371,21 @@ public class TestLease {
     FSDataOutputStream out5 = createFsOut(c5, "/out5");
     Assert.assertTrue(c1.getLeaseRenewer() != c5.getLeaseRenewer());
     Assert.assertTrue(c3.getLeaseRenewer() != c5.getLeaseRenewer());
+  }
+
+  private void verifyRenewerEmpty(LeaseRenewer originalRenewer, FSDataOutputStream d_out, byte[] buf) throws Exception {
+    // this should not work.
+    try {
+      d_out.write(buf, 0, 1024);
+      d_out.close();
+      Assert.fail("Write did not fail even after the fatal lease renewal failure");
+    } catch (IOException e) {
+      LOG.info("Write failed as expected. ", e);
+    }
+
+    // If aborted, the renewer should be empty. (no reference to clients)
+    Thread.sleep(1000);
+    Assert.assertTrue(originalRenewer.isEmpty());
   }
   
   private FSDataOutputStream createFsOut(DFSClient dfs, String path) 
