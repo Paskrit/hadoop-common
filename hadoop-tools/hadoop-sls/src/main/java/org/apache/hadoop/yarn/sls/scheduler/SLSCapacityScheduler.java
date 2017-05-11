@@ -284,10 +284,11 @@ public class SLSCapacityScheduler extends CapacityScheduler implements
 	          && schedulerEvent instanceof AppAttemptAddedSchedulerEvent) {
           AppAttemptAddedSchedulerEvent appAddEvent =
 	                (AppAttemptAddedSchedulerEvent) schedulerEvent;
-            SchedulerApplication app =
-                    applications.get(appAddEvent.getApplicationAttemptId().getApplicationId());
-            String queueName = app.getQueue().getQueueName();
-            appQueueMap.put(appAddEvent.getApplicationAttemptId(), queueName);
+          SchedulerApplication app =
+            applications.get(appAddEvent.getApplicationAttemptId()
+              .getApplicationId());
+	        appQueueMap.put(appAddEvent.getApplicationAttemptId(), app.getQueue()
+            .getQueueName());
 	      }
 	    }
   }
