@@ -97,9 +97,9 @@ public class RMContainerAllocator extends RMContainerRequestor
   public static final 
   float DEFAULT_COMPLETED_MAPS_PERCENT_FOR_REDUCE_SLOWSTART = 0.05f;
   
-  static final Priority PRIORITY_FAST_FAIL_MAP;
+  private static final Priority PRIORITY_FAST_FAIL_MAP;
   static final Priority PRIORITY_REDUCE;
-  static final Priority PRIORITY_MAP;
+  private static final Priority PRIORITY_MAP;
 
   @VisibleForTesting
   public static final String RAMPDOWN_DIAGNOSTIC = "Reducer preempted "
@@ -969,6 +969,11 @@ public class RMContainerAllocator extends RMContainerRequestor
           assignedRequests.reduces.size());
     return Resources.add(headRoom,
       Resources.add(assignedMapResource, assignedReduceResource));
+  }
+
+  @VisibleForTesting
+  public int getNumOfPendingReduces() {
+    return pendingReduces.size();
   }
 
   @Private
