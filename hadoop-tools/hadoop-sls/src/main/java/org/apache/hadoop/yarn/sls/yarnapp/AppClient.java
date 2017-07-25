@@ -29,6 +29,8 @@ public class AppClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(AppClient.class);
     private static final String APP_NAME = "SLSYarnApp";
+    public static final String TAR_PATH = "hadoop-cdh5-kjn.tar.gz";
+
     private YarnConfiguration conf;
     private YarnClient yarnClient;
     private String appJar = "hadoop-sls-2.6.0-cdh5.11.0.jar";
@@ -81,6 +83,28 @@ public class AppClient {
         jarResource.setSize(destStatus.getLen());
         jarResource.setType(LocalResourceType.FILE);
         jarResource.setVisibility(LocalResourceVisibility.APPLICATION);
+
+        //Local Resource for tar
+        // The shell script has to be made available on the final container(s)
+        // where it will be executed.
+        // To do this, we need to first copy into the filesystem that is visible
+        // to the yarn framework.
+        // We do not need to set this as a local resource for the application
+        // master as the application master does not need it.
+        String TarPath = "/home/k.jacquemin/hadoop-2.6.0-cdh5.11.0-kjn.tar.gz";
+        String hdfsTarLocation = "";
+        long hdfsTarLen = 0;
+        long hdfsTarTimestamp = 0;
+        Path tarSrc = new Path(TarPath);
+        String tarPathSuffix = APP_NAME + "/" + appId.getId() + "/" + TAR_PATH;
+        Path tarDst =
+                new Path(fs.getHomeDirectory(), tarPathSuffix);
+        fs.copyFromLocalFile(false, true, tarSrc, tarDst);
+        hdfsTarLocation = tarDst.toUri().toString();
+        FileStatus shellFileStatus = fs.getFileStatus(tarDst);
+        hdfsTarLen = shellFileStatus.getLen();
+        hdfsTarTimestamp = shellFileStatus.getModificationTime();
+
         Map<String, LocalResource> localResources = new HashMap<>();
         localResources.put("app.jar", jarResource);
 
@@ -94,6 +118,13 @@ public class AppClient {
         env.put("AMJARTIMESTAMP",
                 Long.toString(destStatus.getModificationTime()));
         env.put("AMJARLEN", Long.toString(destStatus.getLen()));
+
+        // put location of tar into env
+        // using the env info, the application master will create the correct local resource for the
+        // eventual containers that will be launched to execute the tar
+        env.put("TARLOCATION", hdfsTarLocation);
+        env.put("TARTIMESTAMP", Long.toString(hdfsTarTimestamp));
+        env.put("TARLEN", Long.toString(hdfsTarLen));
 
         // Launch Environment
         StringBuilder classPathEnv = new StringBuilder().append(
@@ -176,7 +207,8 @@ public class AppClient {
 
     public static void main(String[] args) {
         AppClient client;
-        try {LOG.info("test");
+        try {
+            LOG.info("test");
             client = new AppClient(args);
             boolean result = client.run();
         } catch (YarnException | IOException e) {

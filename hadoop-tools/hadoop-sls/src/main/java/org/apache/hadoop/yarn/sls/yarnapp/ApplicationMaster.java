@@ -107,11 +107,11 @@ public class ApplicationMaster {
         public String getLaunchCommand(Container container) throws IOException {
             Vector<CharSequence> vargs = new Vector<>(30);
             vargs.add(Environment.JAVA_HOME.$() + "/bin/java");
-            vargs.add("org.apache.hadoop.yarn.sls.yarnapp.MyContainer ");
-            vargs.add(inputFile.toString()); // File to read
+            vargs.add("org.apache.hadoop.yarn.sls.yarnapp." + containerType + " ");
+            vargs.add(inputPath); // File to read
             vargs.add(outputPath);
-            vargs.add("1><LOG_DIR>/MyContainer.stdout");
-            vargs.add("2><LOG_DIR>/MyContainer.stderr");
+            vargs.add("1><LOG_DIR>/" + containerType + ".stdout");
+            vargs.add("2><LOG_DIR>/" + containerType + ".stderr");
             StringBuilder command = new StringBuilder();
             for (CharSequence str : vargs) {
                 command.append(str).append(" ");
@@ -125,7 +125,28 @@ public class ApplicationMaster {
                     container.getId());
 
             Map<String, LocalResource> localResources = new HashMap<>();
-            Map<String, String> env = System.getenv();
+            //TEST modify env variable
+            Map<String, String> env = new HashMap<String, String>(System.getenv());
+
+            /// DEBUG
+            for (String key : env.keySet()) {
+                if (key.contains("HADOOP")) {
+                    LOG.info("AM : ENV VARIABLE {} = {}", key, env.get(key));
+                }
+            }
+            ///
+
+
+            //TEST CHANGE ENV SETTING
+            env.remove("HADOOP_CONF_DIR");
+            env.remove("HADOOP_CLASSPATH");
+            env.remove("HADOOP_HOME");
+            env.remove("HADOOP_INSTALL");
+            env.remove("HADOOP_LIBEXEC_DIR");
+            env.remove("HADOOP_MAPRED_HOME");
+            env.put("HADOOP_ROOT", env.get("TARLOCATION"));
+            env.put("HADOOP_CLIENT_OPTS", "-Xmx4g");
+            //END TEST
 
             LocalResource appJarFile = Records.newRecord(LocalResource.class);
             appJarFile.setType(LocalResourceType.FILE);
@@ -142,6 +163,35 @@ public class ApplicationMaster {
             localResources.put("app.jar", appJarFile);
             LOG.info("Added {} as a local resource to the Container",
                     appJarFile.toString());
+
+            // The container for the eventual shell commands needs its own local
+            // resources too.
+            // In this scenario, if a shell script is specified, we need to have it
+            // copied and made available to the container.
+            String tarLocation = env.get("TARLOCATION");
+            long tarLocationTimestamp = Long.parseLong(env
+                    .get("TARTIMESTAMP"));
+            long tarLocationLen = Long.parseLong(env
+                    .get("TARLEN"));
+
+            Path tarPath = new Path(tarLocation);
+
+
+            URL yarnUrl = null;
+            try {
+                yarnUrl = ConverterUtils.getYarnUrlFromURI(
+                        new URI(tarPath.toString()));
+            } catch (URISyntaxException e) {
+                LOG.error("Error when trying to use shell script path specified"
+                        + " in env, path=" + tarPath, e);
+                return;
+            }
+            LocalResource tarRsrc = LocalResource.newInstance(yarnUrl,
+                    LocalResourceType.ARCHIVE, LocalResourceVisibility.APPLICATION,
+                    tarLocationLen, tarLocationTimestamp);
+            localResources.put("hadoop.tar", tarRsrc);
+            LOG.info("Added {} as a local resource to the Container",
+                    tarRsrc.toString());
 
             ContainerLaunchContext clc = Records
                     .newRecord(ContainerLaunchContext.class);
@@ -163,7 +213,7 @@ public class ApplicationMaster {
                 LOG.info("Container {} launched!", container.getId());
             } catch (IOException e) {
                 // TODO Auto-generated catch block
-                e.printStackTrace();
+                LOG.error(e.getLocalizedMessage());
             }
         }
     }
@@ -182,14 +232,18 @@ public class ApplicationMaster {
     // follow thread launched
     private List<Thread> launchThreads = new ArrayList<>();
     // input file argument
+
     private Path inputFile;
+
+    private String inputPath;
     private String outputPath;
     private ByteBuffer allTokens;
+    private final String containerType = "MyContainerSLS";
 
     public ApplicationMaster(String[] args) throws IOException {
         conf = new YarnConfiguration();
         fileSystem = FileSystem.get(conf);
-        inputFile = new Path(args[0]);
+        inputPath = args[0];
         outputPath = args[1];
     }
 
@@ -243,11 +297,19 @@ public class ApplicationMaster {
         nmClient.start();
 
         Resource capacity = Records.newRecord(Resource.class);
-        capacity.setMemory(4096);
-        capacity.setVirtualCores(4);
+        //capacity.setMemory(49152);
+        capacity.setMemory(8192);
+        //capacity.setVirtualCores(16);
+        capacity.setVirtualCores(8);
 
         Priority priority = Records.newRecord(Priority.class);
         priority.setPriority(0);
+
+        if (containerType == "MyContainerSLS") {
+            inputFile = new Path(inputPath + "/sls-jobs.json");
+        } else {
+            inputFile = new Path(inputPath);
+        }
 
         BlockLocation[] blocks = this.getBlockLocations();
         Set<String> distinctHosts = new HashSet<String>();
@@ -258,6 +320,7 @@ public class ApplicationMaster {
             }
         }
         ContainerRequest ask = new ContainerRequest(capacity, distinctHosts.toArray(new String[distinctHosts.size()]), null, priority, false);
+
         numOfContainers++;
         amRMClient.addContainerRequest(ask);
         LOG.info("Asking for Container for Hosts {}", distinctHosts.toString());
@@ -281,7 +344,7 @@ public class ApplicationMaster {
                 launchThread.join(10000);
 
             } catch (InterruptedException e) {
-                LOG.info("Exception thrown in thread join: {}", e.getMessage());
+                LOG.info("Exception thrown in thread join: {}", e.getLocalizedMessage());
                 e.printStackTrace();
             }
         }

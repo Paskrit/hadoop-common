@@ -50,7 +50,7 @@ public class MyContainer {
             LOG.info("Generate SLS Nodes file");
             RumenToSLSConverter.generateSLSNodeFile(writerNodes, LOG);
         } catch (IOException e) {
-            LOG.error("IOException : {}", e.getMessage());
+            LOG.error("IOException : {}", e.getLocalizedMessage());
         }
     }
 
