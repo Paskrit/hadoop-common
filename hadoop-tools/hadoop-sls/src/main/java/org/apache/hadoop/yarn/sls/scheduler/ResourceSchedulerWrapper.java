@@ -21,6 +21,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -36,6 +37,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.codahale.metrics.*;
+import com.codahale.metrics.graphite.Graphite;
+import com.codahale.metrics.graphite.GraphiteReporter;
 import org.apache.hadoop.classification.InterfaceAudience.LimitedPrivate;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
@@ -83,18 +87,11 @@ import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FairSchedule
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fifo.FifoScheduler;
 import org.apache.hadoop.yarn.sls.SLSRunner;
 import org.apache.hadoop.yarn.sls.conf.SLSConfiguration;
+import org.apache.hadoop.yarn.sls.utils.ClockHolder;
 import org.apache.hadoop.yarn.sls.web.SLSWebApp;
 import org.apache.hadoop.yarn.sls.yarnapp.BufferedStreamFactory;
 import org.apache.hadoop.yarn.util.resource.Resources;
 import org.apache.log4j.Logger;
-
-import com.codahale.metrics.Counter;
-import com.codahale.metrics.CsvReporter;
-import com.codahale.metrics.Gauge;
-import com.codahale.metrics.Histogram;
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.SlidingWindowReservoir;
-import com.codahale.metrics.Timer;
 
 @Private
 @Unstable
@@ -476,8 +473,8 @@ public class ResourceSchedulerWrapper
         initMetricsCSVOutput();
 
         // start web app to provide real-time tracking
-        web = new SLSWebApp(this, metricsWebAddressPort);
-        web.start();
+//        web = new SLSWebApp(this, metricsWebAddressPort);
+//        web.start();
 
         // a thread to update histogram timer
         pool = new ScheduledThreadPoolExecutor(2);
@@ -490,7 +487,7 @@ public class ResourceSchedulerWrapper
 
         // application running information
         //jobRuntimeLogBW = new BufferedWriter(new FileWriter(metricsOutputDir + "/jobruntime.csv"));
-        jobRuntimeLogBW = BufferedStreamFactory.getInstance().createBufferedWritter("/user/k.jacquemin/output/jobruntime.csv");
+        jobRuntimeLogBW = BufferedStreamFactory.getInstance().createBufferedWriter("/user/k.jacquemin/output/jobruntime.csv");
         jobRuntimeLogBW.write("JobID,real_start_time,real_end_time," +
                 "simulate_start_time,simulate_end_time" + EOL);
         jobRuntimeLogBW.flush();
@@ -662,17 +659,28 @@ public class ResourceSchedulerWrapper
         int timeIntervalMS = conf.getInt(
                 SLSConfiguration.METRICS_RECORD_INTERVAL_MS,
                 SLSConfiguration.METRICS_RECORD_INTERVAL_MS_DEFAULT);
-        File dir = new File(metricsOutputDir + "/metrics");
-        if (!dir.exists()
-                && !dir.mkdirs()) {
-            LOG.error("Cannot create directory " + dir.getAbsoluteFile());
-        }
-        final CsvReporter reporter = CsvReporter.forRegistry(metrics)
-                .formatFor(Locale.US)
+//        File dir = new File(metricsOutputDir + "/metrics");
+//        if (!dir.exists()
+//                && !dir.mkdirs()) {
+//            LOG.error("Cannot create directory " + dir.getAbsoluteFile());
+//        }
+//        final CsvReporter reporter = CsvReporter.forRegistry(metrics)
+//                .formatFor(Locale.US)
+//                .convertRatesTo(TimeUnit.SECONDS)
+//                .convertDurationsTo(TimeUnit.MILLISECONDS)
+//                .build(new File(metricsOutputDir + "/metrics"));
+//        reporter.start(timeIntervalMS, TimeUnit.MILLISECONDS);
+
+        LOG.info("GraphiteReporter : lake.simulation.sls.405");
+        final Graphite graphite = new Graphite(new InetSocketAddress("graphite-relay.storage.criteo.preprod", 3341));
+        final GraphiteReporter reporter = GraphiteReporter.forRegistry(metrics)
+                .prefixedWith("lake.simulation.sls.405")
+                .withClock(ClockHolder.getInstance())
                 .convertRatesTo(TimeUnit.SECONDS)
                 .convertDurationsTo(TimeUnit.MILLISECONDS)
-                .build(new File(metricsOutputDir + "/metrics"));
-        reporter.start(timeIntervalMS, TimeUnit.MILLISECONDS);
+                .filter(MetricFilter.ALL)
+                .build(graphite);
+        reporter.start(1, TimeUnit.MINUTES);
     }
 
     class HistogramsRunnable implements Runnable {
@@ -696,7 +704,7 @@ public class ResourceSchedulerWrapper
         public MetricsLogRunnable() {
             try {
                 //metricsLogBW = new BufferedWriter(new FileWriter(metricsOutputDir + "/realtimetrack.json"));
-                metricsLogBW = BufferedStreamFactory.getInstance().createBufferedWritter("/user/k.jacquemin/output/realtimetrack.json");
+                metricsLogBW = BufferedStreamFactory.getInstance().createBufferedWriter("/user/k.jacquemin/output/realtimetrack.json");
                 metricsLogBW.write("[");
             } catch (IOException e) {
                 e.printStackTrace();

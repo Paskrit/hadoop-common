@@ -48,7 +48,7 @@ public class BufferedStreamFactory {
         fs = FileSystem.get(config);
     }
 
-    private BufferedWriter createHdfsBufferedWritter(String path) throws IOException {
+    private BufferedWriter createHdfsBufferedWriter(String path) throws IOException {
         LOG.info("Create HdfsBufferedWritter : "+path);
         BufferedWriter writer;
         try{
@@ -61,8 +61,8 @@ public class BufferedStreamFactory {
         return writer;
     }
 
-    public BufferedWriter createBufferedWritter(String path) throws IOException {
-        return createHdfsBufferedWritter(path);
+    public BufferedWriter createBufferedWriter(String path) throws IOException {
+        return createHdfsBufferedWriter(path);
     }
 
     public boolean createDirectoryIfNotExist(String path) {
