@@ -31,6 +31,11 @@ public class AppClient {
     private static final String APP_NAME = "SLSYarnApp";
     public static final String TAR_PATH = "hadoop-cdh5-kjn.tar.gz";
 
+    // Start time for client
+    private final long clientStartTime = System.currentTimeMillis();
+    // Timeout threshold for client. Kill app after time interval expires.
+    private long clientTimeout = 6000000;
+
     private YarnConfiguration conf;
     private YarnClient yarnClient;
     private String appJar = "hadoop-sls-2.6.0-cdh5.11.0.jar";
@@ -101,9 +106,24 @@ public class AppClient {
                 new Path(fs.getHomeDirectory(), tarPathSuffix);
         fs.copyFromLocalFile(false, true, tarSrc, tarDst);
         hdfsTarLocation = tarDst.toUri().toString();
-        FileStatus shellFileStatus = fs.getFileStatus(tarDst);
-        hdfsTarLen = shellFileStatus.getLen();
-        hdfsTarTimestamp = shellFileStatus.getModificationTime();
+        FileStatus tarFileStatus = fs.getFileStatus(tarDst);
+        hdfsTarLen = tarFileStatus.getLen();
+        hdfsTarTimestamp = tarFileStatus.getModificationTime();
+
+        //Local Resource for xml
+        String XmlPath = "/home/k.jacquemin/custom-site.xml";
+        String hdfsXmlLocation = "";
+        long hdfsXmlLen = 0;
+        long hdfsXmlTimestamp = 0;
+        Path xmlSrc = new Path(XmlPath);
+        String xmlPathSuffix = APP_NAME + "/" + appId.getId() + "/custom-site.xml";
+        Path xmlDst =
+                new Path(fs.getHomeDirectory(), xmlPathSuffix);
+        fs.copyFromLocalFile(false, true, xmlSrc, xmlDst);
+        hdfsXmlLocation = xmlDst.toUri().toString();
+        FileStatus xmlFileStatus = fs.getFileStatus(xmlDst);
+        hdfsXmlLen = xmlFileStatus.getLen();
+        hdfsXmlTimestamp = xmlFileStatus.getModificationTime();
 
         Map<String, LocalResource> localResources = new HashMap<>();
         localResources.put("app.jar", jarResource);
@@ -125,6 +145,10 @@ public class AppClient {
         env.put("TARLOCATION", hdfsTarLocation);
         env.put("TARTIMESTAMP", Long.toString(hdfsTarTimestamp));
         env.put("TARLEN", Long.toString(hdfsTarLen));
+
+        env.put("XMLLOCATION", hdfsXmlLocation);
+        env.put("XMLTIMESTAMP", Long.toString(hdfsXmlTimestamp));
+        env.put("XMLLEN", Long.toString(hdfsXmlLen));
 
         // Launch Environment
         StringBuilder classPathEnv = new StringBuilder().append(
@@ -202,13 +226,98 @@ public class AppClient {
         appId = appContext.getApplicationId();
         yarnClient.submitApplication(appContext);
 
-        return true;
+        // Monitor the application
+        return monitorApplication(appId);
+    }
+
+    /**
+     * Monitor the submitted application for completion.
+     * Kill application if time expires.
+     * @param appId Application Id of application to be monitored
+     * @return true if application completed successfully
+     * @throws YarnException
+     * @throws IOException
+     */
+    private boolean monitorApplication(ApplicationId appId)
+            throws YarnException, IOException {
+
+        while (true) {
+
+            // Check app status every 3 seconds.
+            try {
+                Thread.sleep(3000);
+            } catch (InterruptedException e) {
+                LOG.debug("Thread sleep in monitoring loop interrupted");
+            }
+
+            // Get application report for the appId we are interested in
+            ApplicationReport report = yarnClient.getApplicationReport(appId);
+
+            LOG.info("Got application report from ASM for"
+                    + ", appId=" + appId.getId()
+                    + ", clientToAMToken=" + report.getClientToAMToken()
+                    + ", appDiagnostics=" + report.getDiagnostics()
+                    + ", appMasterHost=" + report.getHost()
+                    + ", appQueue=" + report.getQueue()
+                    + ", appMasterRpcPort=" + report.getRpcPort()
+                    + ", appStartTime=" + report.getStartTime()
+                    + ", yarnAppState=" + report.getYarnApplicationState().toString()
+                    + ", distributedFinalState=" + report.getFinalApplicationStatus().toString()
+                    + ", appTrackingUrl=" + report. getTrackingUrl()
+                    + ", appUser=" + report.getUser());
+
+            YarnApplicationState state = report.getYarnApplicationState();
+            FinalApplicationStatus dsStatus = report.getFinalApplicationStatus();
+            if (YarnApplicationState.FINISHED == state) {
+                if (FinalApplicationStatus.SUCCEEDED == dsStatus) {
+                    LOG.info("Application has completed successfully. Breaking monitoring loop");
+                    return true;
+                }
+                else {
+                    LOG.info("Application did finished unsuccessfully."
+                            + " YarnState=" + state.toString() + ", DSFinalStatus=" + dsStatus.toString()
+                            + ". Breaking monitoring loop");
+                    return false;
+                }
+            }
+            else if (YarnApplicationState.KILLED == state
+                    || YarnApplicationState.FAILED == state) {
+                LOG.info("Application did not finish."
+                        + " YarnState=" + state.toString() + ", DSFinalStatus=" + dsStatus.toString()
+                        + ". Breaking monitoring loop");
+                return false;
+            }
+
+            if (System.currentTimeMillis() > (clientStartTime + clientTimeout)) {
+                LOG.info("Reached client specified timeout for application. Killing application");
+                forceKillApplication(appId);
+                return false;
+            }
+        }
+
+    }
+
+    /**
+     * Kill a submitted application by sending a call to the ASM
+     * @param appId Application Id to be killed.
+     * @throws YarnException
+     * @throws IOException
+     */
+    private void forceKillApplication(ApplicationId appId)
+            throws YarnException, IOException {
+        // TODO clarify whether multiple jobs with the same app id can be submitted and be running at
+        // the same time.
+        // If yes, can we kill a particular attempt only?
+
+        // Response can be ignored as it is non-null on success or
+        // throws an exception in case of failures
+        yarnClient.killApplication(appId);
     }
 
     public static void main(String[] args) {
         AppClient client;
         try {
-            LOG.info("test");
+            LOG.info("AppClient for YARN SLS");
             client = new AppClient(args);
             boolean result = client.run();
         } catch (YarnException | IOException e) {

@@ -14,6 +14,7 @@ import org.apache.hadoop.yarn.api.ApplicationConstants.Environment;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
 import org.apache.hadoop.yarn.api.records.*;
 import org.apache.hadoop.yarn.client.api.AMRMClient.ContainerRequest;
+import org.apache.hadoop.yarn.client.api.YarnClient;
 import org.apache.hadoop.yarn.client.api.async.AMRMClientAsync;
 import org.apache.hadoop.yarn.client.api.async.AMRMClientAsync.CallbackHandler;
 import org.apache.hadoop.yarn.client.api.async.NMClientAsync;
@@ -58,6 +59,11 @@ public class ApplicationMaster {
             for (Container container : containers) {
                 LOG.info("Starting Container on {}",
                         container.getNodeHttpAddress());
+
+                LOG.info("-----");
+                //http://a4-5d-36-fc-ef-50.hpc.criteo.preprod:8042/node/containerlogs/container_e358_1500892691690_0132_01_000001/k.jacquemin/ApplicationMaster.stderr/?start=0
+                LOG.info("LOG URL http://{}/node/containerlogs/{}/k.jacquemin/MyContainerSLS.stderr/?start=0", container.getNodeHttpAddress(), container.getId());
+                LOG.info("-----");
 
                 ContainerLauncher c = new ContainerLauncher(container,
                         containerListener);
@@ -106,7 +112,26 @@ public class ApplicationMaster {
 
         public String getLaunchCommand(Container container) throws IOException {
             Vector<CharSequence> vargs = new Vector<>(30);
+
+            vargs.add("export HADOOP_ROOT=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+            vargs.add("export PATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/bin:$PATH\";");
+            vargs.add("export CLASSPATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop:" +
+//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/yarn/lib/*:"+
+//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/mapreduce/lib/*:"+
+//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/tools/lib/*:"+
+//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/common/lib/*:"+
+//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/hdfs/lib/*:"+
+                    "$CLASSPATH\";");
+            vargs.add("export HADOOP_CONF_DIR=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop\";");
+            vargs.add("export HADOOP_HDFS_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+            vargs.add("export HADOOP_COMMON_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+            vargs.add("export HADOOP_YARN_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+            vargs.add("export HADOOP_MAPRED_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+            vargs.add("export HADOOP_CLASSPATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/mapreduce1/contrib/capacity-scheduler/*.jar:$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/tools/lib/*:$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/tools/html\";");
+            vargs.add("export YARN_CONF_DIR=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop\";");
+            vargs.add("export HADOOP_PREFIX=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
             vargs.add(Environment.JAVA_HOME.$() + "/bin/java");
+            vargs.add("-verbose:class");
             vargs.add("org.apache.hadoop.yarn.sls.yarnapp." + containerType + " ");
             vargs.add(inputPath); // File to read
             vargs.add(outputPath);
@@ -125,28 +150,7 @@ public class ApplicationMaster {
                     container.getId());
 
             Map<String, LocalResource> localResources = new HashMap<>();
-            //TEST modify env variable
-            Map<String, String> env = new HashMap<String, String>(System.getenv());
-
-            /// DEBUG
-            for (String key : env.keySet()) {
-                if (key.contains("HADOOP")) {
-                    LOG.info("AM : ENV VARIABLE {} = {}", key, env.get(key));
-                }
-            }
-            ///
-
-
-            //TEST CHANGE ENV SETTING
-            env.remove("HADOOP_CONF_DIR");
-            env.remove("HADOOP_CLASSPATH");
-            env.remove("HADOOP_HOME");
-            env.remove("HADOOP_INSTALL");
-            env.remove("HADOOP_LIBEXEC_DIR");
-            env.remove("HADOOP_MAPRED_HOME");
-            env.put("HADOOP_ROOT", env.get("TARLOCATION"));
-            env.put("HADOOP_CLIENT_OPTS", "-Xmx4g");
-            //END TEST
+            Map<String, String> env = System.getenv();
 
             LocalResource appJarFile = Records.newRecord(LocalResource.class);
             appJarFile.setType(LocalResourceType.FILE);
@@ -175,23 +179,26 @@ public class ApplicationMaster {
                     .get("TARLEN"));
 
             Path tarPath = new Path(tarLocation);
-
-
-            URL yarnUrl = null;
-            try {
-                yarnUrl = ConverterUtils.getYarnUrlFromURI(
-                        new URI(tarPath.toString()));
-            } catch (URISyntaxException e) {
-                LOG.error("Error when trying to use shell script path specified"
-                        + " in env, path=" + tarPath, e);
-                return;
-            }
-            LocalResource tarRsrc = LocalResource.newInstance(yarnUrl,
+            LocalResource tarRsrc = LocalResource.newInstance(ConverterUtils.getYarnUrlFromURI(tarPath.toUri()),
                     LocalResourceType.ARCHIVE, LocalResourceVisibility.APPLICATION,
                     tarLocationLen, tarLocationTimestamp);
             localResources.put("hadoop.tar", tarRsrc);
             LOG.info("Added {} as a local resource to the Container",
                     tarRsrc.toString());
+
+            String xmlLocation = env.get("XMLLOCATION");
+            long xmlLocationTimestamp = Long.parseLong(env
+                    .get("XMLTIMESTAMP"));
+            long xmlLocationLen = Long.parseLong(env
+                    .get("XMLLEN"));
+
+            Path xmlPath = new Path(xmlLocation);
+            LocalResource xmlRsrc = LocalResource.newInstance(ConverterUtils.getYarnUrlFromURI(xmlPath.toUri()),
+                    LocalResourceType.FILE, LocalResourceVisibility.APPLICATION,
+                    xmlLocationLen, xmlLocationTimestamp);
+            localResources.put("custom-site.xml", xmlRsrc);
+            LOG.info("Added {} as a local resource to the Container",
+                    xmlRsrc.toString());
 
             ContainerLaunchContext clc = Records
                     .newRecord(ContainerLaunchContext.class);
@@ -218,6 +225,12 @@ public class ApplicationMaster {
         }
     }
 
+    //
+    //ApplicationMaster Attributes
+    //
+
+    private YarnClient yarnClient;
+
     private static final Logger LOG = LoggerFactory
             .getLogger(ApplicationMaster.class);
     private YarnConfiguration conf;
@@ -242,16 +255,18 @@ public class ApplicationMaster {
 
     public ApplicationMaster(String[] args) throws IOException {
         conf = new YarnConfiguration();
+        yarnClient = YarnClient.createYarnClient();
+        yarnClient.init(conf);
         fileSystem = FileSystem.get(conf);
         inputPath = args[0];
         outputPath = args[1];
     }
 
     public void run() throws YarnException, IOException {
-
+/*TODO remove output folder
         LOG.info("Removing outputFolder if present: {}", outputPath);
         fileSystem.delete(new Path(outputPath), true);
-
+*/
         // Note: Credentials, Token, UserGroupInformation, DataOutputBuffer class
         // are marked as LimitedPrivate
         Credentials credentials =
@@ -297,10 +312,10 @@ public class ApplicationMaster {
         nmClient.start();
 
         Resource capacity = Records.newRecord(Resource.class);
-        //capacity.setMemory(49152);
-        capacity.setMemory(8192);
-        //capacity.setVirtualCores(16);
-        capacity.setVirtualCores(8);
+        capacity.setMemory(49152);
+        //capacity.setMemory(8192);
+        capacity.setVirtualCores(16);
+        //capacity.setVirtualCores(8);
 
         Priority priority = Records.newRecord(Priority.class);
         priority.setPriority(0);
@@ -332,8 +347,7 @@ public class ApplicationMaster {
             try {
                 Thread.sleep(2000);
             } catch (InterruptedException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
+                LOG.error("InterruptedException : ", e);
             }
         }
 

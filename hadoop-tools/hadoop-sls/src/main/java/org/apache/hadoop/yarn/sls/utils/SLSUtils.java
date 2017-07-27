@@ -20,6 +20,7 @@ package org.apache.hadoop.yarn.sls.utils;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.net.NodeBase;
 import org.apache.hadoop.tools.rumen.JobTraceReader;
@@ -28,11 +29,9 @@ import org.apache.hadoop.tools.rumen.LoggedTask;
 import org.apache.hadoop.tools.rumen.LoggedTaskAttempt;
 import org.codehaus.jackson.JsonFactory;
 import org.codehaus.jackson.map.ObjectMapper;
+import org.apache.log4j.Logger;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.Reader;
+import java.io.*;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Map;
@@ -121,30 +120,35 @@ public class SLSUtils {
     return nodeSet;
   }
 
-  /**
-   * parse the input node file, return each host name
-   */
-  public static Set<String> parseNodesFromNodeFile(String nodeFile)
-          throws IOException {
-    Set<String> nodeSet = new HashSet<String>();
-    JsonFactory jsonF = new JsonFactory();
-    ObjectMapper mapper = new ObjectMapper();
-    Reader input = new FileReader(nodeFile);
-    try {
-      Iterator<Map> i = mapper.readValues(
-              jsonF.createJsonParser(input), Map.class);
-      while (i.hasNext()) {
-        Map jsonE = i.next();
-        String rack = "/" + jsonE.get("rack");
-        List tasks = (List) jsonE.get("nodes");
-        for (Object o : tasks) {
-          Map jsonNode = (Map) o;
-          nodeSet.add(rack + "/" + jsonNode.get("node"));
+    public static Set<String> parseNodesFromNodeFile(String nodeFile, Configuration hdfsConf, Logger LOG)
+            throws IOException {
+
+        LOG.info("Parse Nodes from Node file : " + nodeFile);
+
+        FileSystem fs = FileSystem.get(hdfsConf);
+        Path inputFile = new Path(nodeFile);
+
+        Set<String> nodeSet = new HashSet<String>();
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(inputFile)))) {
+            JsonFactory jsonF = new JsonFactory();
+            ObjectMapper mapper = new ObjectMapper();
+
+            Iterator<Map> i = mapper.readValues(
+                    jsonF.createJsonParser(reader), Map.class);
+            while (i.hasNext()) {
+                Map jsonE = i.next();
+                String rack = "/" + jsonE.get("rack");
+                List tasks = (List) jsonE.get("nodes");
+                for (Object o : tasks) {
+                    Map jsonNode = (Map) o;
+                    nodeSet.add(rack + "/" + jsonNode.get("node"));
+                }
+            }
+        } catch (IOException e) {
+            LOG.error("parseNodesFromNodeFile : ", e);
+            throw e;
         }
-      }
-    } finally {
-      input.close();
-    }
     return nodeSet;
   }
 }
