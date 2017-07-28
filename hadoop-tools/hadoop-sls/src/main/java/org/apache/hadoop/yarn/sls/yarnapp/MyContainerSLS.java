@@ -72,7 +72,7 @@ public class MyContainerSLS {
 
         try {
             SLSRunner sls = new SLSRunner(true, new String[]{inputSLS}, inputNodes, "tmp_0",
-                    new HashSet<String>(), false, 10, config);
+                    new HashSet<String>(), false, 50, config);
             sls.start();
         } catch (Exception e) {
             throw e;

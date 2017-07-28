@@ -62,7 +62,7 @@ public class ApplicationMaster {
 
                 LOG.info("-----");
                 //http://a4-5d-36-fc-ef-50.hpc.criteo.preprod:8042/node/containerlogs/container_e358_1500892691690_0132_01_000001/k.jacquemin/ApplicationMaster.stderr/?start=0
-                LOG.info("LOG URL http://{}/node/containerlogs/{}/k.jacquemin/MyContainerSLS.stderr/?start=0", container.getNodeHttpAddress(), container.getId());
+                LOG.info("LOG URL http://{}/node/containerlogs/{}/k.jacquemin/" + containerType + ".stderr/?start=0", container.getNodeHttpAddress(), container.getId());
                 LOG.info("-----");
 
                 ContainerLauncher c = new ContainerLauncher(container,
@@ -113,23 +113,19 @@ public class ApplicationMaster {
         public String getLaunchCommand(Container container) throws IOException {
             Vector<CharSequence> vargs = new Vector<>(30);
 
-            vargs.add("export HADOOP_ROOT=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
-            vargs.add("export PATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/bin:$PATH\";");
-            vargs.add("export CLASSPATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop:" +
-//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/yarn/lib/*:"+
-//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/mapreduce/lib/*:"+
-//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/tools/lib/*:"+
-//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/common/lib/*:"+
-//                    "$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/hdfs/lib/*:"+
-                    "$CLASSPATH\";");
-            vargs.add("export HADOOP_CONF_DIR=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop\";");
-            vargs.add("export HADOOP_HDFS_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
-            vargs.add("export HADOOP_COMMON_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
-            vargs.add("export HADOOP_YARN_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
-            vargs.add("export HADOOP_MAPRED_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
-            vargs.add("export HADOOP_CLASSPATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/mapreduce1/contrib/capacity-scheduler/*.jar:$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/tools/lib/*:$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/tools/html\";");
-            vargs.add("export YARN_CONF_DIR=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop\";");
-            vargs.add("export HADOOP_PREFIX=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+            if (containerType.equals("MyContainerSLS")) {
+                vargs.add("export HADOOP_ROOT=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+                vargs.add("export PATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/bin:$PATH\";");
+                vargs.add("export CLASSPATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop:$CLASSPATH\";");
+                vargs.add("export HADOOP_CONF_DIR=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop\";");
+                vargs.add("export HADOOP_HDFS_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+                vargs.add("export HADOOP_COMMON_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+                vargs.add("export HADOOP_YARN_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+                vargs.add("export HADOOP_MAPRED_HOME=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+                vargs.add("export HADOOP_CLASSPATH=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/mapreduce1/contrib/capacity-scheduler/*.jar:$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/tools/lib/*:$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/share/hadoop/tools/html\";");
+                vargs.add("export YARN_CONF_DIR=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0/etc/hadoop\";");
+                vargs.add("export HADOOP_PREFIX=\"$(readlink -f hadoop.tar)/hadoop-2.6.0-cdh5.11.0\";");
+            }
             vargs.add(Environment.JAVA_HOME.$() + "/bin/java");
             vargs.add("-verbose:class");
             vargs.add("org.apache.hadoop.yarn.sls.yarnapp." + containerType + " ");
@@ -248,138 +244,147 @@ public class ApplicationMaster {
 
     private Path inputFile;
 
-    private String inputPath;
-    private String outputPath;
+    private final String inputPath;
+    private final String outputPath;
     private ByteBuffer allTokens;
-    private final String containerType = "MyContainerSLS";
+    private final String containerType;
 
     public ApplicationMaster(String[] args) throws IOException {
         conf = new YarnConfiguration();
         yarnClient = YarnClient.createYarnClient();
         yarnClient.init(conf);
         fileSystem = FileSystem.get(conf);
-        inputPath = args[0];
-        outputPath = args[1];
+        containerType = args[0];
+        inputPath = args[1];
+        outputPath = args[2];
     }
 
     public void run() throws YarnException, IOException {
+        String status = "Application Started";
+        FinalApplicationStatus appStatus = FinalApplicationStatus.UNDEFINED;
+
+        try {
 /*TODO remove output folder
         LOG.info("Removing outputFolder if present: {}", outputPath);
         fileSystem.delete(new Path(outputPath), true);
 */
-        // Note: Credentials, Token, UserGroupInformation, DataOutputBuffer class
-        // are marked as LimitedPrivate
-        Credentials credentials =
-                UserGroupInformation.getCurrentUser().getCredentials();
-        DataOutputBuffer dob = new DataOutputBuffer();
-        credentials.writeTokenStorageToStream(dob);
-        // Now remove the AM->RM token so that containers cannot access it.
-        Iterator<Token<?>> iter = credentials.getAllTokens().iterator();
-        LOG.info("Executing with tokens:");
-        while (iter.hasNext()) {
-            Token<?> token = iter.next();
-            LOG.info(token.toString());
-            if (token.getKind().equals(AMRMTokenIdentifier.KIND_NAME)) {
-                iter.remove();
+            // Note: Credentials, Token, UserGroupInformation, DataOutputBuffer class
+            // are marked as LimitedPrivate
+            Credentials credentials =
+                    UserGroupInformation.getCurrentUser().getCredentials();
+            DataOutputBuffer dob = new DataOutputBuffer();
+            credentials.writeTokenStorageToStream(dob);
+            // Now remove the AM->RM token so that containers cannot access it.
+            Iterator<Token<?>> iter = credentials.getAllTokens().iterator();
+            LOG.info("Executing with tokens:");
+            while (iter.hasNext()) {
+                Token<?> token = iter.next();
+                LOG.info(token.toString());
+                if (token.getKind().equals(AMRMTokenIdentifier.KIND_NAME)) {
+                    iter.remove();
+                }
             }
-        }
-        allTokens = ByteBuffer.wrap(dob.getData(), 0, dob.getLength());
+            allTokens = ByteBuffer.wrap(dob.getData(), 0, dob.getLength());
 
-        amRMClient = AMRMClientAsync.createAMRMClientAsync(1000,
-                new RMCallbackHandler());
-        amRMClient.init(conf);
-        amRMClient.start();
+            amRMClient = AMRMClientAsync.createAMRMClientAsync(1000,
+                    new RMCallbackHandler());
+            amRMClient.init(conf);
+            amRMClient.start();
 
-        // Register with RM
-        RegisterApplicationMasterResponse response = amRMClient
-                .registerApplicationMaster(NetUtils.getHostname(), -1, "");
+            // Register with RM
+            RegisterApplicationMasterResponse response = amRMClient
+                    .registerApplicationMaster(NetUtils.getHostname(), -1, "");
 
-        LOG.info("ApplicationMaster is registered with response: {}",
-                response.toString());
+            LOG.info("ApplicationMaster is registered with response: {}",
+                    response.toString());
 
-        // Dump out information about cluster capability as seen by the
-        // resource manager
-        int maxMem = response.getMaximumResourceCapability().getMemory();
-        LOG.info("AM: Max mem capabililty of resources in this cluster " + maxMem);
+            // Dump out information about cluster capability as seen by the
+            // resource manager
+            int maxMem = response.getMaximumResourceCapability().getMemory();
+            LOG.info("AM: Max mem capabililty of resources in this cluster " + maxMem);
 
-        int maxVCores = response.getMaximumResourceCapability().getVirtualCores();
-        LOG.info("AM: Max vcores capabililty of resources in this cluster " + maxVCores);
+            int maxVCores = response.getMaximumResourceCapability().getVirtualCores();
+            LOG.info("AM: Max vcores capabililty of resources in this cluster " + maxVCores);
 
-        // Define container handler
-        containerListener = new NMCallbackHandler(this);
-        nmClient = NMClientAsync.createNMClientAsync(containerListener);
-        nmClient.init(conf);
-        nmClient.start();
+            // Define container handler
+            containerListener = new NMCallbackHandler(this);
+            nmClient = NMClientAsync.createNMClientAsync(containerListener);
+            nmClient.init(conf);
+            nmClient.start();
 
-        Resource capacity = Records.newRecord(Resource.class);
-        capacity.setMemory(49152);
-        //capacity.setMemory(8192);
-        capacity.setVirtualCores(16);
-        //capacity.setVirtualCores(8);
+            Resource capacity = Records.newRecord(Resource.class);
+            capacity.setMemory(49152);
+            //capacity.setMemory(8192);
+            capacity.setVirtualCores(16);
+            //capacity.setVirtualCores(8);
 
-        Priority priority = Records.newRecord(Priority.class);
-        priority.setPriority(0);
+            Priority priority = Records.newRecord(Priority.class);
+            priority.setPriority(0);
 
-        if (containerType == "MyContainerSLS") {
-            inputFile = new Path(inputPath + "/sls-jobs.json");
-        } else {
-            inputFile = new Path(inputPath);
-        }
-
-        BlockLocation[] blocks = this.getBlockLocations();
-        Set<String> distinctHosts = new HashSet<String>();
-        for (BlockLocation block : blocks) {
-            String[] hosts = block.getHosts();
-            for (String host : hosts) {
-                distinctHosts.add(host);
+            LOG.info("containerType = '"+containerType+"'");;
+            if (containerType.equals("MyContainerSLS")) {
+                inputFile = new Path(inputPath + "/sls-jobs.json");
+            } else {
+                inputFile = new Path(inputPath);
             }
-        }
-        ContainerRequest ask = new ContainerRequest(capacity, distinctHosts.toArray(new String[distinctHosts.size()]), null, priority, false);
 
-        numOfContainers++;
-        amRMClient.addContainerRequest(ask);
-        LOG.info("Asking for Container for Hosts {}", distinctHosts.toString());
-
-        // Wait for containers to be done
-        while (!done && (numCompletedContainers.get() < numOfContainers)) {
-            LOG.info("The number of completed Containers = "
-                    + this.numCompletedContainers.get());
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                LOG.error("InterruptedException : ", e);
+            BlockLocation[] blocks = this.getBlockLocations();
+            Set<String> distinctHosts = new HashSet<String>();
+            for (BlockLocation block : blocks) {
+                String[] hosts = block.getHosts();
+                for (String host : hosts) {
+                    distinctHosts.add(host);
+                }
             }
-        }
+            ContainerRequest ask = new ContainerRequest(capacity, distinctHosts.toArray(new String[distinctHosts.size()]), null, priority, false);
 
-        // Join all launched threads: needed for when we time
-        // out and we need to release containers
-        for (Thread launchThread : launchThreads) {
-            try {
-                launchThread.join(10000);
+            numOfContainers++;
+            amRMClient.addContainerRequest(ask);
+            LOG.info("Asking for Container for Hosts {}", distinctHosts.toString());
 
-            } catch (InterruptedException e) {
-                LOG.info("Exception thrown in thread join: {}", e.getLocalizedMessage());
-                e.printStackTrace();
+            // Wait for containers to be done
+            while (!done && (numCompletedContainers.get() < numOfContainers)) {
+                LOG.info("The number of completed Containers = "
+                        + this.numCompletedContainers.get());
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    LOG.error("InterruptedException : ", e);
+                }
             }
+
+            // Join all launched threads: needed for when we time
+            // out and we need to release containers
+            for (Thread launchThread : launchThreads) {
+                try {
+                    launchThread.join(10000);
+
+                } catch (InterruptedException e) {
+                    LOG.info("Exception thrown in thread join: {}", e);
+                }
+            }
+
+            LOG.info("Containers have all completed, so shutting down NMClient and AMRMClient...");
+            status = "Application complete !";
+            appStatus = FinalApplicationStatus.SUCCEEDED;
+        } catch (IOException | YarnException e) {
+            status = "Application error !";
+            appStatus = FinalApplicationStatus.FAILED;
+            throw e;
+        } finally {
+            // stop NM handler
+            nmClient.stop();
+            // Unregister with ResourceManager
+            amRMClient.unregisterApplicationMaster(appStatus, status, null);
+            amRMClient.stop();
         }
-
-        LOG.info("Containers have all completed, so shutting down NMClient and AMRMClient...");
-
-        // stop NM handler
-        nmClient.stop();
-        // Unregister with ResourceManager
-        amRMClient.unregisterApplicationMaster(
-                FinalApplicationStatus.SUCCEEDED, "Application complete !",
-                null);
-        amRMClient.stop();
-
         //TODO delete the HDFS jar file used by the Application Master
     }
 
     public BlockLocation[] getBlockLocations() throws IOException {
         // Read the block information from HDFS
         FileStatus fileStatus = fileSystem.getFileStatus(inputFile);
-        LOG.info("File status = {}", fileStatus.toString());
+        LOG.info("File {} status = {}",inputFile.toString(), fileStatus.toString());
         BlockLocation[] blocks = fileSystem.getFileBlockLocations(fileStatus,
                 0, fileStatus.getLen());
         LOG.info("Number of blocks for {} = {}", inputFile.toString(),
@@ -394,7 +399,7 @@ public class ApplicationMaster {
             master.run();
         } catch (IOException | YarnException e) {
             // TODO Auto-generated catch block
-            e.printStackTrace();
+            LOG.error("Application Master main error : ", e);
         }
     }
 

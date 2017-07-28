@@ -25,12 +25,13 @@ public class ScaleClock extends com.codahale.metrics.Clock implements Clock {
 
   public ScaleClock(long scaleFactor) {
     this.scaleFactor = scaleFactor;
-    origin = System.currentTimeMillis();
+    origin = 0;//System.currentTimeMillis();
   }
 
   @Override
   public long getTime() {
-    return (System.currentTimeMillis() - origin) * scaleFactor;
+    return System.currentTimeMillis();
+    //return (System.currentTimeMillis() - origin) * scaleFactor;
   }
 
   @Override

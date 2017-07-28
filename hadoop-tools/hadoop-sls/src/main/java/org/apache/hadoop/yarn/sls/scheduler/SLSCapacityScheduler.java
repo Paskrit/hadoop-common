@@ -698,7 +698,7 @@ public class SLSCapacityScheduler extends CapacityScheduler implements
         Calendar c = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
         c.setTimeInMillis(System.currentTimeMillis());
 
-        String pattern = String.format("%sH%s", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
+        String pattern = String.format("%sD%sH%s", c.get(Calendar.DAY_OF_YEAR), c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
         LOG.info("GraphiteReporter : lake.simulation.sls." + pattern);
         final Graphite graphite = new Graphite(new InetSocketAddress("graphite-relay.storage.criteo.preprod", 3341));
         final GraphiteReporter reporter = GraphiteReporter.forRegistry(metrics)

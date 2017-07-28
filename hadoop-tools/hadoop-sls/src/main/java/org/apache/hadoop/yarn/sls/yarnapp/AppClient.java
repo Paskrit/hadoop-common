@@ -34,23 +34,25 @@ public class AppClient {
     // Start time for client
     private final long clientStartTime = System.currentTimeMillis();
     // Timeout threshold for client. Kill app after time interval expires.
-    private long clientTimeout = 6000000;
+    private long clientTimeout = 100000000;
 
     private YarnConfiguration conf;
     private YarnClient yarnClient;
     private String appJar = "hadoop-sls-2.6.0-cdh5.11.0.jar";
     private ApplicationId appId;
     private FileSystem fs;
-    private String inputPath;
-    private String outputPath;
+    private final String inputPath;
+    private final String outputPath;
+    private final String containerType;
 
     public AppClient(String[] args) throws IOException {
         conf = new YarnConfiguration();
         yarnClient = YarnClient.createYarnClient();
         yarnClient.init(conf);
         fs = FileSystem.get(conf);
-        inputPath = args[0];
-        outputPath = args[1];
+        containerType = args[0];//MyContainer or MyContainerSLS
+        inputPath = args[1];
+        outputPath = args[2];
     }
 
     public boolean run() throws YarnException, IOException {
@@ -178,6 +180,7 @@ public class AppClient {
         Vector<CharSequence> vargs = new Vector<>(30);
         vargs.add(Environment.JAVA_HOME.$() + "/bin/java");
         vargs.add("org.apache.hadoop.yarn.sls.yarnapp.ApplicationMaster");
+        vargs.add(containerType);
         vargs.add(inputPath);
         vargs.add(outputPath);
         vargs.add("1><LOG_DIR>/ApplicationMaster.stdout");
